@@ -14,7 +14,7 @@ function isGlobalThis(path) {
 
 // TODO - Handle:
 // https://searchfox.org/mozilla-central/rev/d4d6f81e0ab479cde192453bae83d5e3edfb39d6/toolkit/modules/Timer.jsm#109
-// intl/l10n/Localization.jsm
+// https://searchfox.org/mozilla-central/source/security/manager/ssl/DER.jsm#302
 
 module.exports = function(fileInfo, api) {
   const { jscodeshift } = api;
@@ -45,15 +45,16 @@ module.exports = function(fileInfo, api) {
 
   // TODO: Don't remove the expression at https://searchfox.org/mozilla-central/rev/d4d6f81e0ab479cde192453bae83d5e3edfb39d6/services/fxaccounts/FxAccountsPairing.jsm#172
   // hg revert --all  && jscodeshift services/fxaccounts/FxAccountsPairing.jsm --transform ~/Code/jsm-rewrites/no-this-property-assign.js && hg diff
-  // let matchingClasses = root.find(jscodeshift.ClassDeclaration).filter(function (path) {
-  //   return isGlobalThis(path) &&
-  //           path.value.id.name == name;
-  // });
+  let matchingClasses = root.find(jscodeshift.ClassDeclaration).filter(function (path) {
+    return isGlobalThis(path) &&
+            path.value.id.name == name;
+  });
 
-  // if (matchingClasses.length) {
-  //   console.log(`Removed this assignment due to existing top level class: ${name}`);
-  //   return true;
-  // }
+  if (matchingClasses.length) {
+    // TODO: Also remove the parens around the class in toolkit/modules/ActorChild.jsm
+    console.log(`Removed this assignment due to existing top level class in ${fileInfo.path}: ${name}`);
+    return true;
+  }
 
   let matchingDeclarations = root.find(jscodeshift.VariableDeclaration).filter(function (path) {
     return isGlobalThis(path) &&
