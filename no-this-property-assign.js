@@ -12,8 +12,11 @@ function isGlobalThis(path) {
   return true;
 }
 
+// TODO - Handle:
+// https://searchfox.org/mozilla-central/rev/d4d6f81e0ab479cde192453bae83d5e3edfb39d6/toolkit/modules/Timer.jsm#109
+// intl/l10n/Localization.jsm
+
 module.exports = function(fileInfo, api) {
-// console.log(fileInfo);
   const { jscodeshift } = api;
   const root = jscodeshift(fileInfo.source);
   const {statement} = jscodeshift.template;
@@ -28,15 +31,29 @@ module.exports = function(fileInfo, api) {
   the second statement is unnecessary for the export to work. So it can be removed
   */
  root.find(jscodeshift.AssignmentExpression).filter(function (path) {
-  let maybe = !path.parent &&
+  let maybe = path.parent.parent.value.type == "Program" &&
               path.value.left.object &&
               path.value.left.object.type == "ThisExpression" &&
+              path.value.right.type == "Identifier" &&
               isGlobalThis(path);
+
+              // console.log(path.parent.parent);
   if (!maybe) {
     return false;
   }
-
   let name = path.value.right.name;
+
+  // TODO: Don't remove the expression at https://searchfox.org/mozilla-central/rev/d4d6f81e0ab479cde192453bae83d5e3edfb39d6/services/fxaccounts/FxAccountsPairing.jsm#172
+  // hg revert --all  && jscodeshift services/fxaccounts/FxAccountsPairing.jsm --transform ~/Code/jsm-rewrites/no-this-property-assign.js && hg diff
+  // let matchingClasses = root.find(jscodeshift.ClassDeclaration).filter(function (path) {
+  //   return isGlobalThis(path) &&
+  //           path.value.id.name == name;
+  // });
+
+  // if (matchingClasses.length) {
+  //   console.log(`Removed this assignment due to existing top level class: ${name}`);
+  //   return true;
+  // }
 
   let matchingDeclarations = root.find(jscodeshift.VariableDeclaration).filter(function (path) {
     return isGlobalThis(path) &&
@@ -44,8 +61,25 @@ module.exports = function(fileInfo, api) {
             path.value.declarations[0].id.name == name;
   });
 
-  return matchingDeclarations.length == 1;
+  if (matchingDeclarations.length) {
+    console.log(`Removed this assignment due to existing top level declaration in ${fileInfo.path}: ${name}`);
+    return true;
+  }
+
+  return false;
  }).remove();
+
+
+//  root.find(jscodeshift.AssignmentExpression).filter(function (path) {
+//   return true;
+//  }.replaceWith(path => {
+//   // Handle a weird case `var Scheduler = (this.Scheduler = {})` to `var Scheduler = {}`
+//   // if (path.parent.value.type == "VariableDeclarator" && path.parent.value.id.loc.identifierName == path.value.left.property.name) {
+//     return statement`${path.value.right}`;
+//   // }
+//   // const decl = statement`const ${path.value.left.property.name} = ${path.value.right}`;
+//   // return decl;
+// });
 
   /*
   Replace:
@@ -56,15 +90,28 @@ module.exports = function(fileInfo, api) {
   root.find(jscodeshift.AssignmentExpression).filter(function (path) {
     // browser/components/newtab/common/Reducers.jsm
 
-    return path.value.left.object &&
+    let maybe = path.value.left.object &&
            path.value.left.object.type == "ThisExpression" &&
            isGlobalThis(path);
-  }).replaceWith(path => {
-    // Handle a weird case `var Scheduler = (this.Scheduler = {})` to `var Scheduler = {}`
-    if (path.parent.value.type == "VariableDeclarator" && path.parent.value.id.loc.identifierName == path.value.left.property.name) {
-      return statement`${path.value.right}`;
+    if (!maybe) {
+      return false;
     }
 
+    return true;
+
+    // let globalDefinitions = root.findVariableDeclarators(path.value.left.property.name).filter(path => {
+    //   console.log(path);
+    //   return isGlobalThis(path);
+    // });
+
+    // console.log(globalDefinitions.length);
+    // return globalDefinitions.length == 0;
+  }).replaceWith(path => {
+    // Handle a weird case `var Scheduler = (this.Scheduler = {})` to `var Scheduler = {}`
+    if (path.parent.value.type == "VariableDeclarator" && path.parent.value.id.loc.identifierName == path.value.left.property.name ||
+        path.parent.value.type == "ExpressionStatement" && path.value.left.property &&  path.parent.value.expression.right.id && path.value.left.property.name == path.parent.value.expression.right.id.name) {
+      return statement`${path.value.right}`;
+    }
     const decl = statement`const ${path.value.left.property.name} = ${path.value.right}`;
     return decl;
   });
