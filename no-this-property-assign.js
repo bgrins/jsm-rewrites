@@ -14,14 +14,28 @@ function isGlobalThis(path) {
 }
 
 
-function getMatchingGlobalDeclarations(root, name) {
+function hasMatchingGlobalDeclarations(root, name) {
   let matchingDeclarations = root.find(jscodeshift.VariableDeclaration).filter(function (path) {
     return isGlobalThis(path) &&
             path.value.declarations.length == 1 &&
             path.value.declarations[0].id.name == name;
   });
-  return matchingDeclarations;
+  return matchingDeclarations.length;
 }
+
+function hasMatchingGlobalClasses(root, name) {
+  let matchingClassDeclarations = root.find(jscodeshift.ClassDeclaration).filter(function (path) {
+    return isGlobalThis(path) &&
+            path.value.id && path.value.id.name == name;
+  });
+  let matchingClassExpressions = root.find(jscodeshift.ClassExpression).filter(function (path) {
+    return isGlobalThis(path) &&
+            path.value.id && path.value.id.name == name;
+  });
+
+  return matchingClassDeclarations.length || matchingClassExpressions.length;
+}
+
 
 
 // TODO - Handle:
@@ -52,8 +66,7 @@ module.exports = function(fileInfo, api) {
     return false;
   }
   let name = path.value.right.name;
-  let matchingDeclarations = getMatchingGlobalDeclarations(root, name);
-  if (matchingDeclarations.length) {
+  if (hasMatchingGlobalDeclarations(root, name) || hasMatchingGlobalClasses(root, name)) {
     console.log(`Removed this assignment due to existing top level declaration in ${fileInfo.path}: ${name}`);
     return true;
   }
@@ -74,16 +87,7 @@ module.exports = function(fileInfo, api) {
 
   // Handle classes like `this.Foo = class Foo {}`: https://searchfox.org/mozilla-central/rev/d4d6f81e0ab479cde192453bae83d5e3edfb39d6/services/fxaccounts/FxAccountsPairing.jsm#172
   // hg revert --all  && jscodeshift services/fxaccounts/FxAccountsPairing.jsm --transform ~/Code/jsm-rewrites/no-this-property-assign.js && hg diff
-  let matchingClassDeclarations = root.find(jscodeshift.ClassDeclaration).filter(function (path) {
-    return isGlobalThis(path) &&
-            path.value.id.name == name;
-  });
-  let matchingClassExpressions = root.find(jscodeshift.ClassExpression).filter(function (path) {
-    return isGlobalThis(path) &&
-            path.value.id.name == name;
-  });
-
-  if (matchingClassDeclarations.length || matchingClassExpressions.length) {
+  if (hasMatchingGlobalClasses(root, name)) {
     console.log(`Removed this assignment due to existing top level class in ${fileInfo.path}: ${name}`);
     return true;
   }
@@ -122,6 +126,14 @@ module.exports = function(fileInfo, api) {
     // Handle `var Scheduler = (this.Scheduler = {})` to `var Scheduler = {}`
     if (path.parent.value.type == "VariableDeclarator" && path.parent.value.id.loc.identifierName == path.value.left.property.name ||
         path.parent.value.type == "ExpressionStatement" && path.value.left.property &&  path.parent.value.expression.right.id && path.value.left.property.name == path.parent.value.expression.right.id.name) {
+      if (path.value.right.type == "FunctionExpression") {
+        return jscodeshift.functionDeclaration(
+          jscodeshift.identifier(path.value.right.id.name),
+          path.value.right.params,
+          jscodeshift.blockStatement(path.value.right.body.body)
+        );
+      }
+
       return statement`${path.value.right}`;
     }
 
@@ -135,8 +147,7 @@ module.exports = function(fileInfo, api) {
       return res;
     };
     */
-  //  console.log(path.value.left.property.name, path.parent.value.type == "ExpressionStatement", path.value.left.property.name, getMatchingGlobalDeclarations(root, path.value.left.property.name).length);
-    if (path.parent.value.type == "ExpressionStatement" && path.value.left.property && getMatchingGlobalDeclarations(root, path.value.left.property.name).length > 0) {
+    if (path.parent.value.type == "ExpressionStatement" && path.value.left.property && hasMatchingGlobalDeclarations(root, path.value.left.property.name)) {
       return statement`${path.value.left.property} = ${path.value.right}`;
     }
 
