@@ -23,7 +23,7 @@ function hasMatchingGlobalDeclarations(root, name) {
 
   let matchingFunctionDeclarations = root.find(jscodeshift.FunctionDeclaration).filter(function (path) {
     return isGlobalThis(path) &&
-            path.value.id.name == name;
+            path.value.id && path.value.id.name == name;
   });
 
   return matchingDeclarations.length || matchingFunctionDeclarations.length;
@@ -136,7 +136,7 @@ module.exports = function(fileInfo, api) {
     // Handle `var Scheduler = (this.Scheduler = {})` to `var Scheduler = {}`
     if (path.parent.value.type == "VariableDeclarator" && path.parent.value.id.loc.identifierName == path.value.left.property.name ||
         path.parent.value.type == "ExpressionStatement" && path.value.left.property &&  path.parent.value.expression.right.id && path.value.left.property.name == path.parent.value.expression.right.id.name) {
-      if (path.value.right.type == "FunctionExpression") {
+      if (path.value.right.type == "FunctionExpression" && path.value.right.id) {
         return jscodeshift.functionDeclaration(
           jscodeshift.identifier(path.value.right.id.name),
           path.value.right.params,
