@@ -20,7 +20,13 @@ function hasMatchingGlobalDeclarations(root, name) {
             path.value.declarations.length == 1 &&
             path.value.declarations[0].id.name == name;
   });
-  return matchingDeclarations.length;
+
+  let matchingFunctionDeclarations = root.find(jscodeshift.FunctionDeclaration).filter(function (path) {
+    return isGlobalThis(path) &&
+            path.value.id.name == name;
+  });
+
+  return matchingDeclarations.length || matchingFunctionDeclarations.length;
 }
 
 function hasMatchingGlobalClasses(root, name) {
@@ -41,6 +47,17 @@ function hasMatchingGlobalClasses(root, name) {
 // TODO - Handle:
 // https://searchfox.org/mozilla-central/rev/d4d6f81e0ab479cde192453bae83d5e3edfb39d6/toolkit/modules/Timer.jsm#109
 // https://searchfox.org/mozilla-central/source/security/manager/ssl/DER.jsm#302
+
+// Some test scripts to handle various cases:
+/*
+hg revert --all  && jscodeshift toolkit/components/extensions/MessageChannel.jsm --transform ~/Code/jsm-rewrites/no-this-property-assign.js && hg diff
+hg revert --all  && jscodeshift intl/l10n/Localization.jsm --transform ~/Code/jsm-rewrites/no-this-property-assign.js && hg diff
+hg revert --all  && jscodeshift services/fxaccounts/FxAccountsPairing.jsm --transform ~/Code/jsm-rewrites/no-this-property-assign.js && hg diff
+hg revert --all  && jscodeshift toolkit/components/url-classifier/UrlClassifierListManager.jsm --transform ~/Code/jsm-rewrites/no-this-property-assign.js && hg diff
+hg revert --all  && jscodeshift browser/components/newtab/lib/ActivityStreamPrefs.jsm --transform ~/Code/jsm-rewrites/no-this-property-assign.js && hg diff
+hg revert --all  && jscodeshift browser/components/newtab/lib/SearchShortcuts.jsm --transform ~/Code/jsm-rewrites/no-this-property-assign.js && hg diff
+*/
+
 
 module.exports = function(fileInfo, api) {
   jscodeshift = api.jscodeshift;
@@ -94,7 +111,8 @@ module.exports = function(fileInfo, api) {
  }).replaceWith((path) => {
   return jscodeshift.classDeclaration(
     jscodeshift.identifier(path.value.right.id.name),
-    jscodeshift.classBody(path.value.right.body.body)
+    jscodeshift.classBody(path.value.right.body.body),
+    path.value.right.superClass && jscodeshift.identifier(path.value.right.superClass.name)
   );
 });
 
@@ -114,14 +132,6 @@ module.exports = function(fileInfo, api) {
     }
 
     return true;
-
-    // let globalDefinitions = root.findVariableDeclarators(path.value.left.property.name).filter(path => {
-    //   console.log(path);
-    //   return isGlobalThis(path);
-    // });
-
-    // console.log(globalDefinitions.length);
-    // return globalDefinitions.length == 0;
   }).replaceWith(path => {
     // Handle `var Scheduler = (this.Scheduler = {})` to `var Scheduler = {}`
     if (path.parent.value.type == "VariableDeclarator" && path.parent.value.id.loc.identifierName == path.value.left.property.name ||
