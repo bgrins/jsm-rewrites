@@ -1,4 +1,5 @@
-let jscodeshift = null;
+
+let noThisPropertyRead = require("./no-this-property-read");
 
 function isGlobalThis(path) {
   while (path = path.parent) {
@@ -13,7 +14,7 @@ function isGlobalThis(path) {
   return true;
 }
 
-function hasMatchingGlobalDeclarations(root, name) {
+function hasMatchingGlobalDeclarations(jscodeshift, root, name) {
   let matchingDeclarations = root.find(jscodeshift.VariableDeclaration).filter(function (path) {
     return isGlobalThis(path) &&
             path.value.declarations.length == 1 &&
@@ -28,7 +29,7 @@ function hasMatchingGlobalDeclarations(root, name) {
   return matchingDeclarations.length || matchingFunctionDeclarations.length;
 }
 
-function hasMatchingGlobalClasses(root, name) {
+function hasMatchingGlobalClasses(jscodeshift, root, name) {
   let matchingClassDeclarations = root.find(jscodeshift.ClassDeclaration).filter(function (path) {
     return isGlobalThis(path) &&
             path.value.id && path.value.id.name == name;
@@ -56,9 +57,9 @@ hg revert --all  && jscodeshift browser/components/newtab/lib/SearchShortcuts.js
 */
 
 module.exports = function(fileInfo, api) {
-  jscodeshift = api.jscodeshift;
-  const root = jscodeshift(fileInfo.source);
+  const {jscodeshift} = api;
   const {statement} = jscodeshift.template;
+  const root = jscodeshift(fileInfo.source);
 
   /*
   In https://searchfox.org/mozilla-central/source/browser/components/newtab/common/Reducers.jsm#753,773:
@@ -79,7 +80,7 @@ module.exports = function(fileInfo, api) {
     return false;
   }
   let name = path.value.right.name;
-  if (hasMatchingGlobalDeclarations(root, name) || hasMatchingGlobalClasses(root, name)) {
+  if (hasMatchingGlobalDeclarations(jscodeshift, root, name) || hasMatchingGlobalClasses(jscodeshift, root, name)) {
     console.log(`Removed this assignment due to existing top level declaration in ${fileInfo.path}: ${name}`);
     return true;
   }
@@ -100,7 +101,7 @@ module.exports = function(fileInfo, api) {
 
   // Handle classes like `this.Foo = class Foo {}`: https://searchfox.org/mozilla-central/rev/d4d6f81e0ab479cde192453bae83d5e3edfb39d6/services/fxaccounts/FxAccountsPairing.jsm#172
   // hg revert --all  && jscodeshift services/fxaccounts/FxAccountsPairing.jsm --transform ~/Code/jsm-rewrites/no-this-property-assign.js && hg diff
-  if (hasMatchingGlobalClasses(root, name)) {
+  if (hasMatchingGlobalClasses(jscodeshift, root, name)) {
     console.log(`Removed this assignment due to existing top level class in ${fileInfo.path}: ${name}`);
     return true;
   }
@@ -153,27 +154,21 @@ module.exports = function(fileInfo, api) {
       return res;
     };
     */
-    if (path.parent.value.type == "ExpressionStatement" && path.value.left.property && hasMatchingGlobalDeclarations(root, path.value.left.property.name)) {
+    if (path.parent.value.type == "ExpressionStatement" && path.value.left.property && hasMatchingGlobalDeclarations(jscodeshift, root, path.value.left.property.name)) {
       return statement`${path.value.left.property} = ${path.value.right}`;
     }
 
-    const decl = statement`const ${path.value.left.property.name} = ${path.value.right}`;
+    let decl;
+    if (path.value.left.property.name == "EXPORTED_SYMBOLS") {
+      decl = statement`const ${path.value.left.property.name} = ${path.value.right}`;
+    } else {
+      decl = statement`let ${path.value.left.property.name} = ${path.value.right}`;
+    }
+
     return decl;
   });
 
-  /*
-  Replace:
-    this.bar
-  With:
-    bar
-  */
-  root.find(jscodeshift.MemberExpression).filter(function (path) {
-    // console.log(path.value.object.type == "ThisExpression");
-    return path.value.object.type == "ThisExpression" &&
-           isGlobalThis(path);
-  }).replaceWith(path => {
-    return jscodeshift.identifier(path.value.property.name);
-  });
+  noThisPropertyRead.doTranslate(jscodeshift, root);
 
   return root.toSource();
 };
