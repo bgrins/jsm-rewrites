@@ -13,7 +13,6 @@ function isGlobalThis(path) {
   return true;
 }
 
-
 function hasMatchingGlobalDeclarations(root, name) {
   let matchingDeclarations = root.find(jscodeshift.VariableDeclaration).filter(function (path) {
     return isGlobalThis(path) &&
@@ -42,8 +41,6 @@ function hasMatchingGlobalClasses(root, name) {
   return matchingClassDeclarations.length || matchingClassExpressions.length;
 }
 
-
-
 // TODO - Handle:
 // https://searchfox.org/mozilla-central/rev/d4d6f81e0ab479cde192453bae83d5e3edfb39d6/toolkit/modules/Timer.jsm#109
 // https://searchfox.org/mozilla-central/source/security/manager/ssl/DER.jsm#302
@@ -57,7 +54,6 @@ hg revert --all  && jscodeshift toolkit/components/url-classifier/UrlClassifierL
 hg revert --all  && jscodeshift browser/components/newtab/lib/ActivityStreamPrefs.jsm --transform ~/Code/jsm-rewrites/no-this-property-assign.js && hg diff
 hg revert --all  && jscodeshift browser/components/newtab/lib/SearchShortcuts.jsm --transform ~/Code/jsm-rewrites/no-this-property-assign.js && hg diff
 */
-
 
 module.exports = function(fileInfo, api) {
   jscodeshift = api.jscodeshift;
