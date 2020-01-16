@@ -9,12 +9,12 @@ npm install -g jscodeshift
 
 ```
 # Find all non-ignored jsm files with rg, then run a transform (skipping files that have parse errors)
-# Run these from a local m-c
+# Run this from a local m-c directory
 
-cp .gitignore .rgignore && rg -l -g '*.jsm' --iglob '!toolkit/components/osfile/*' '' | jscodeshift --stdin --transform ~/Code/jsm-rewrites/no-this-property-assign.js --ignore-pattern ./toolkit/modules/AppConstants.jsm --ignore-pattern ./layout/tools/reftest/manifest.jsm --ignore-pattern ./layout/tools/reftest/reftest.jsm --ignore-pattern ./toolkit/components/reader/Readerable.jsm  --ignore-pattern ./mobile/android/modules/Sanitizer.jsm --ignore-pattern ./js/xpconnect/tests/unit/syntax_error.jsm Transformation error --ignore-pattern ./browser/components/enterprisepolicies/schemas/schema.jsm --ignore-pattern ./python/mozbuild/mozbuild/test/backend/data/build/qux.jsm --ignore-pattern ./python/mozbuild/mozbuild/test/backend/data/build/baz.jsm
+hg revert --all && cp .gitignore .rgignore &&
+rg --files-without-match -g '*.jsm' '^#endif|^#include|^#filter' | jscodeshift --stdin --transform ~/Code/jsm-rewrites/no-this-property-read.js --ignore-pattern ./mobile/android/modules/Sanitizer.jsm --ignore-pattern ./js/xpconnect/tests/unit/syntax_error.jsm &&
+./mach eslint `hg st | rg '^M ' | sed 's/^M //'`
 
-# Fix formatting
-./mach eslint --fix
 ```
 
 ## Development notes
